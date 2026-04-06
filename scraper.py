@@ -1,4 +1,84 @@
-# 微調內文以適應多重關鍵字
+import os, json, smtplib, requests
+from datetime import datetime
+from bs4 import BeautifulSoup
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import google.generativeai as genai
+from duckduckgo_search import DDGS
+
+# 1. 讀取保險箱中的金鑰
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
+
+# 2. 設定 Gemini AI
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-pro-latest')
+
+# 更新後的 11 項關鍵字
+TOPICS = [
+    "數位轉型", "PQC", "金融科技", "OCR", "自然人憑證", 
+    "電子簽章", "生物辨識", "保險科技", "電子簽名", 
+    "數位發展部", "數位簽章"
+]
+collected_news = []
+
+def get_page_content(url):
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, 'html.parser')
+        paragraphs = soup.find_all('p')
+        text = ' '.join([p.text for p in paragraphs])
+        return text[:1500] 
+    except:
+        return ""
+
+def summarize_content(text, topic, title):
+    if not text:
+        return f"無法抓取完整內文，請點擊原始網頁閱讀這篇關於【{topic}】的報導。"
+    prompt = f"請針對以下網頁內容進行繁體中文摘要，長度約 80-100 字，讓人能快速掌握重點。標題：{title}\n內容：{text}"
+    try:
+        response = model.generate_content(prompt)
+        return response.text.replace('\n', '')
+    except:
+        return "摘要生成失敗，請點擊連結查看原文。"
+
+# 3. 執行搜尋抓取
+for topic in TOPICS:
+    print(f"開始搜尋: {topic}")
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(f"{topic} 新聞", region='tw-tz', timelimit='d', max_results=3))
+            
+            for item in results:
+                title = item.get('title')
+                link = item.get('href')
+                content = get_page_content(link)
+                summary = summarize_content(content, topic, title)
+                
+                collected_news.append({
+                    "category": topic,
+                    "title": title,
+                    "url": link,
+                    "summary": summary
+                })
+    except Exception as e:
+        print(f"抓取 {topic} 時發生錯誤: {e}")
+
+# 4. 更新資料盒 
+with open('news_data.json', 'w', encoding='utf-8') as f:
+    json.dump(collected_news, f, ensure_ascii=False, indent=4)
+
+# 5. 發送專屬早安 Gmail
+if collected_news:
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    msg = MIMEMultipart()
+    msg['From'] = GMAIL_ADDRESS
+    msg['To'] = GMAIL_ADDRESS
+    msg['Subject'] = f"【前日資訊彙報】{today_str} 您的專屬產業動態已更新"
+
     html_content = f"""
     <html>
     <body style="font-family: sans-serif; font-size: 16px; color: #333; line-height: 1.6;">
@@ -11,3 +91,15 @@
     </body>
     </html>
     """
+    msg.attach(MIMEText(html_content, 'html'))
+
+    try:
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print("郵件發送成功！")
+    except Exception as e:
+        print(f"郵件發送失敗: {e}")
+else:
+    print("今日無抓取到符合條件的新聞，不發送郵件。")
