@@ -3,27 +3,25 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from googleapiclient.discovery import build
 import google.generativeai as genai
+from duckduckgo_search import DDGS
 
-# 1. 讀取保險箱中的金鑰
+# 1. 讀取保險箱中的金鑰 (已移除失效的 Google 搜尋金鑰)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-SEARCH_API_KEY = os.environ.get("SEARCH_API_KEY")
-SEARCH_ENGINE_ID = os.environ.get("SEARCH_ENGINE_ID")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 
-# 2. 設定 Gemini 與搜尋引擎
+# 2. 設定 Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-pro-latest') # 使用最新的模型
-search_service = build("customsearch", "v1", developerKey=SEARCH_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
 TOPICS = ["數位轉型", "PQC", "金融科技"]
 collected_news = []
 
 def get_page_content(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        # 加入更完整的瀏覽器偽裝，避免被新聞網站阻擋
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         response = requests.get(url, headers=headers, timeout=10)
         response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -43,24 +41,26 @@ def summarize_content(text, topic, title):
     except:
         return "摘要生成失敗，請點擊連結查看原文。"
 
-# 3. 執行搜尋與抓取 (設定抓取過去 24 小時的資訊)
+# 3. 執行免費開源搜尋 (使用 DuckDuckGo，設定台灣繁體與過去24小時)
 for topic in TOPICS:
+    print(f"開始搜尋: {topic}")
     try:
-        # dateRestrict='d1' 代表限制搜尋過去 1 天內的網頁
-        result = search_service.cse().list(q=topic, cx=SEARCH_ENGINE_ID, dateRestrict='d1', num=3).execute()
-        items = result.get('items', [])
-        for item in items:
-            title = item.get('title')
-            link = item.get('link')
-            content = get_page_content(link)
-            summary = summarize_content(content, topic, title)
+        with DDGS() as ddgs:
+            # timelimit='d' 代表過去一天，region='tw-tz' 代表台灣
+            results = list(ddgs.text(f"{topic} 新聞", region='tw-tz', timelimit='d', max_results=3))
             
-            collected_news.append({
-                "category": topic,
-                "title": title,
-                "url": link,
-                "summary": summary
-            })
+            for item in results:
+                title = item.get('title')
+                link = item.get('href')
+                content = get_page_content(link)
+                summary = summarize_content(content, topic, title)
+                
+                collected_news.append({
+                    "category": topic,
+                    "title": title,
+                    "url": link,
+                    "summary": summary
+                })
     except Exception as e:
         print(f"抓取 {topic} 時發生錯誤: {e}")
 
@@ -98,3 +98,5 @@ if collected_news:
         print("郵件發送成功！")
     except Exception as e:
         print(f"郵件發送失敗: {e}")
+else:
+    print("今日無抓取到符合條件的新聞，不發送郵件。")
