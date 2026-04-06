@@ -1,37 +1,38 @@
 import streamlit as st
 import json
 
-# 設定網頁標題與排版
-st.set_page_config(page_title="專屬資訊彙報", page_icon="📰", layout="centered")
-
-# 注入扁平化、淺藍色系 CSS，並設定舒適的大字體與寬行距
-st.markdown("""
-<style>
-    .stApp { background-color: #F4F9FF; }
-    h1, h2, h3 { color: #0056b3; font-family: 'sans-serif'; }
-    p, div, li, span { font-size: 20px !important; line-height: 1.8 !important; color: #2C3E50; }
-    .news-box { background-color: #FFFFFF; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #007BFF; margin-bottom: 20px; }
-</style>
-""", unsafe_allow_html=True)
-
-st.title("📰 每日資訊彙報")
-st.markdown("追蹤主題：**數位轉型**、**PQC**、**金融科技**")
+st.set_page_config(page_title="專屬產業資訊彙報", layout="centered")
+st.title("📊 每日專屬產業資訊彙報")
+st.write("這是由自動化系統每日抓取並生成的最新動態。")
 st.divider()
 
 try:
     with open('news_data.json', 'r', encoding='utf-8') as f:
-        news_list = json.load(f)
+        news_data = json.load(f)
         
-    if not news_list:
-        st.info("目前尚無資料，系統即將進行首次抓取。")
+    if not news_data:
+        st.info("今日尚無符合條件的最新新聞資料。")
     else:
-        for item in news_list:
-            st.markdown(f"""
-            <div class="news-box">
-                <h3 style="margin-top:0;">【{item['category']}】{item['title']}</h3>
-                <p>{item['summary']}</p>
-                <a href="{item['url']}" target="_blank" style="font-size: 18px; color: #007BFF; text-decoration: none;">🔗 閱讀原始網頁</a>
-            </div>
-            """, unsafe_allow_html=True)
+        # 同步更新的 11 項關鍵字
+        topics = [
+            "數位轉型", "PQC", "金融科技", "OCR", "自然人憑證", 
+            "電子簽章", "生物辨識", "保險科技", "電子簽名", 
+            "數位發展部", "數位簽章"
+        ]
+        
+        for topic in topics:
+            st.header(f"📌 {topic}")
+            
+            topic_news = [item for item in news_data if item.get("category") == topic]
+            
+            if not topic_news:
+                st.write("今日無此主題之相關更新。")
+            else:
+                for item in topic_news:
+                    st.subheader(item.get("title"))
+                    st.write(item.get("summary"))
+                    st.markdown(f"[🔗 點此閱讀原始網頁]({item.get('url')})")
+            st.divider()
+
 except FileNotFoundError:
-    st.info("資料庫建置中，請等待系統首次自動執行。")
+    st.error("目前尚未建立新聞資料盒 (news_data.json)，系統將於下次排程自動生成。")
