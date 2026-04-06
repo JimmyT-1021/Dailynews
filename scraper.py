@@ -15,7 +15,7 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
-TOPICS = ["數位轉型", "PQC", "金融科技"]
+TOPICS = ["數位轉型", "PQC", "金融科技", "OCR", "自然人憑證", "電子簽章", "生物辨識", "保險科技", "電子簽名"]
 collected_news = []
 
 def get_page_content(url):
