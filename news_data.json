@@ -1,20 +1,56 @@
 [
     {
-        "category": "電子簽名",
-        "title": "40 Best One Pot Meals for Busy Weeknights - The Pioneer Woman",
-        "url": "https://www.thepioneerwoman.com/food-cooking/g65627006/best-one-pot-meals/",
+        "category": "金融科技",
+        "title": "Facebook share link without JavaScript - Stack Overflow",
+        "url": "https://stackoverflow.com/questions/9120539/facebook-share-link-without-javascript",
         "summary": "摘要生成失敗，請點擊連結查看原文。"
     },
     {
-        "category": "電子簽名",
-        "title": "One-Pot Recipes: 88 Easy One-Pot Meals for Busy Days - Taste of Home",
-        "url": "https://www.tasteofhome.com/collection/one-pot-meals/",
+        "category": "金融科技",
+        "title": "Facebook share link - can you customize the message body text?",
+        "url": "https://stackoverflow.com/questions/5023602/facebook-share-link-can-you-customize-the-message-body-text",
         "summary": "摘要生成失敗，請點擊連結查看原文。"
     },
     {
-        "category": "電子簽名",
-        "title": "21 Lazy One-Pot Dinner Recipes We’ll Never Stop Making",
-        "url": "https://www.allrecipes.com/one-pot-dinners-for-lazy-nights-11855393",
+        "category": "金融科技",
+        "title": "Decoding facebook's blob video url - Stack Overflow",
+        "url": "https://stackoverflow.com/questions/48843356/decoding-facebooks-blob-video-url",
+        "summary": "摘要生成失敗，請點擊連結查看原文。"
+    },
+    {
+        "category": "生物辨識",
+        "title": "Forge of Empires – A free to play browser game.",
+        "url": "https://us0.forgeofempires.com/page/",
+        "summary": "摘要生成失敗，請點擊連結查看原文。"
+    },
+    {
+        "category": "生物辨識",
+        "title": "Forge of Empires - Free online strategy game",
+        "url": "https://us0.forgeofempires.com/",
+        "summary": "無法抓取完整內文，請點擊原始網頁閱讀這篇關於【生物辨識】的報導。"
+    },
+    {
+        "category": "生物辨識",
+        "title": "Forge of Empires – A free to play browser game.",
+        "url": "https://us0.forgeofempires.com/page/the_game/basics/",
+        "summary": "摘要生成失敗，請點擊連結查看原文。"
+    },
+    {
+        "category": "保險科技",
+        "title": "52-week High List Details - MSN Money",
+        "url": "https://www.msn.com/en-us/money/listdetails/52week+High/fl-332e27279f36",
+        "summary": "無法抓取完整內文，請點擊原始網頁閱讀這篇關於【保險科技】的報導。"
+    },
+    {
+        "category": "保險科技",
+        "title": "State Street Hits 52-Week High: Should You Buy the Stock Now?",
+        "url": "https://www.zacks.com/stock/news/2790151/state-street-hits-52-week-high-should-you-buy-the-stock-now",
+        "summary": "摘要生成失敗，請點擊連結查看原文。"
+    },
+    {
+        "category": "保險科技",
+        "title": "Top Recent 52-Week Highs List | Screener - Yahoo Finance",
+        "url": "https://finance.yahoo.com/research-hub/screener/recent_52_week_highs/",
         "summary": "摘要生成失敗，請點擊連結查看原文。"
     }
 ]
