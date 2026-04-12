@@ -4,20 +4,17 @@ on:
   schedule:
     # 設定時間為 UTC 的 22:30 (加上台灣時區 +8 小時，即為每天早上 06:30 執行)
     - cron: '30 22 * * *'
-  workflow_dispatch: # 允許我們隨時手動點擊執行測試！
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  workflow_dispatch: # 允許隨時手動點擊執行測試
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: 取得程式碼
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 設定 Python 環境
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
 
