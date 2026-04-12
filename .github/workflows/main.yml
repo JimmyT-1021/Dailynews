@@ -6,8 +6,11 @@ on:
   workflow_dispatch:
 
 # =========================================
-# 本次新增核心：在程式碼層級強制宣告寫入權限
-# 這能直接覆寫任何 GitHub 後台的權限阻擋機制
+# 1. 解決 Node.js 20 淘汰預警：強制使用最新 Node 24 環境
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# 2. 解決 Exit Code 128 錯誤：強制宣告最高寫入權限
 permissions:
   contents: write
 # =========================================
@@ -17,10 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 取得程式碼
-        uses: actions/checkout@v4 # 退回最穩定的 v4 版本以確保相容性
+        uses: actions/checkout@v4
 
       - name: 設定 Python 環境
-        uses: actions/setup-python@v5 # 退回最穩定的 v5 版本以確保相容性
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
