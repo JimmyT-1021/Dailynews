@@ -16,7 +16,8 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
 # 精準搜尋設定：指定來源 (site:)
-SITES = " (site:ithome.com.tw OR site:moda.gov.tw OR site:techorange.com OR site:money.udn.com OR site:ctee.com.tw OR site:technews.tw OR site:bnext.com.tw OR site:tw.news.yahoo.com)"
+# 來源已更新：移除 Yahoo 新聞，保留 iThome、數位部、科技報橘、經濟日報、工商時報、科技新報、數位時代
+SITES = " (site:ithome.com.tw OR site:moda.gov.tw OR site:techorange.com OR site:money.udn.com OR site:ctee.com.tw OR site:technews.tw OR site:bnext.com.tw)"
 TOPICS = [
     "數位轉型", "PQC", "金融科技", "OCR", "自然人憑證", 
     "電子簽章", "生物辨識", "保險科技", "電子簽名", 
