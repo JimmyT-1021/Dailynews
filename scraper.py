@@ -1,4 +1,4 @@
-import os, json, smtplib, requests
+import os, smtplib, requests
 from datetime import datetime
 from bs4 import BeautifulSoup
 from email.mime.text import MIMEText
@@ -6,7 +6,7 @@ from email.mime.multipart import MIMEMultipart
 import google.generativeai as genai
 from duckduckgo_search import DDGS
 
-# 1. 讀取保險箱中的金鑰
+# 1. 讀取環境變數
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
@@ -15,12 +15,15 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
-# 更新後的 11 項關鍵字
+# 精準搜尋設定：關鍵字 + 指定來源 (site:)
+# 您可以自由增減底下的 site: 網域
+SITES = " (site:ithome.com.tw OR site:moda.gov.tw OR site:technews.tw)"
 TOPICS = [
     "數位轉型", "PQC", "金融科技", "OCR", "自然人憑證", 
     "電子簽章", "生物辨識", "保險科技", "電子簽名", 
     "數位發展部", "數位簽章"
 ]
+
 collected_news = []
 
 def get_page_content(url):
@@ -37,20 +40,22 @@ def get_page_content(url):
 
 def summarize_content(text, topic, title):
     if not text:
-        return f"無法抓取完整內文，請點擊原始網頁閱讀這篇關於【{topic}】的報導。"
-    prompt = f"請針對以下網頁內容進行繁體中文摘要，長度約 80-100 字，讓人能快速掌握重點。標題：{title}\n內容：{text}"
+        return f"無法抓取完整內文，請點擊連結閱讀關於【{topic}】的原文。"
+    prompt = f"請針對以下網頁內容進行繁體中文摘要，長度約 100 字，必須展現專業語調。標題：{title}\n內容：{text}"
     try:
         response = model.generate_content(prompt)
         return response.text.replace('\n', '')
     except:
         return "摘要生成失敗，請點擊連結查看原文。"
 
-# 3. 執行搜尋抓取
+# 3. 執行精準搜尋與抓取
 for topic in TOPICS:
-    print(f"開始搜尋: {topic}")
+    search_query = f"{topic}{SITES}"
+    print(f"執行精準搜尋: {search_query}")
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(f"{topic} 新聞", region='tw-tz', timelimit='d', max_results=3))
+            # 抓取過去 24 小時內最相關的 2 則新聞
+            results = list(ddgs.text(search_query, region='tw-tz', timelimit='d', max_results=2))
             
             for item in results:
                 title = item.get('title')
@@ -65,41 +70,67 @@ for topic in TOPICS:
                     "summary": summary
                 })
     except Exception as e:
-        print(f"抓取 {topic} 時發生錯誤: {e}")
+        print(f"處理 {topic} 時發生錯誤: {e}")
 
-# 4. 更新資料盒 
-with open('news_data.json', 'w', encoding='utf-8') as f:
-    json.dump(collected_news, f, ensure_ascii=False, indent=4)
-
-# 5. 發送專屬早安 Gmail
+# 4. 構建純文字信件內容 (主標、副標、內文)
 if collected_news:
     today_str = datetime.now().strftime("%Y-%m-%d")
     msg = MIMEMultipart()
     msg['From'] = GMAIL_ADDRESS
     msg['To'] = GMAIL_ADDRESS
-    msg['Subject'] = f"【前日資訊彙報】{today_str} 您的專屬產業動態已更新"
+    msg['Subject'] = f"【每日情報彙編】{today_str} 產業要聞與技術趨勢"
 
-    html_content = f"""
+    # 生成 HTML 內容
+    news_html_sections = ""
+    current_category = ""
+    
+    for news in collected_news:
+        # 如果是新類別，加入主標
+        if news['category'] != current_category:
+            current_category = news['category']
+            news_html_sections += f"""
+                <tr style="background-color: #f8f9fa;">
+                    <td style="padding: 10px; border-left: 5px solid #007BFF;">
+                        <h2 style="margin: 0; color: #333; font-size: 20px;">■ {current_category}</h2>
+                    </td>
+                </tr>
+            """
+        
+        # 加入副標(標題)與內文(摘要)
+        news_html_sections += f"""
+            <tr>
+                <td style="padding: 15px 10px;">
+                    <h3 style="margin: 0 0 10px 0; color: #0056b3; font-size: 18px;">▷ {news['title']}</h3>
+                    <p style="margin: 0 0 10px 0; color: #444; font-size: 15px; line-height: 1.6;">{news['summary']}</p>
+                    <a href="{news['url']}" style="color: #007BFF; text-decoration: none; font-size: 14px;">[閱讀原文]</a>
+                </td>
+            </tr>
+            <tr><td><hr style="border: 0; border-top: 1px solid #eee; margin: 0;"></td></tr>
+        """
+
+    full_html = f"""
     <html>
-    <body style="font-family: sans-serif; font-size: 16px; color: #333; line-height: 1.6;">
-        <h2 style="color: #007BFF;">早安！這是為您準備的今日資訊彙報。</h2>
-        <p>系統已自動為您整理了<b>共 {len(TOPICS)} 項專屬關注領域</b>的最新動態。</p>
-        <p>為保持版面簡潔，詳細摘要請至您的專屬網頁閱讀：</p>
-        <p><a href="https://dailynews-g3ghcx7krscevm4hudr5fb.streamlit.app/" style="background-color: #007BFF; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-size: 18px;">👉 點擊前往專屬資訊網頁</a></p>
-        <hr>
-        <p style="font-size: 14px; color: #888;">祝您有美好的一天！自動化機器人 敬上</p>
+    <body style="font-family: 'Microsoft JhengHei', sans-serif; max-width: 800px; margin: 20px auto;">
+        <h1 style="text-align: center; color: #333;">每日專屬產業情報</h1>
+        <p style="text-align: center; color: #666;">報告日期：{today_str}</p>
+        <table style="width: 100%; border-collapse: collapse;">
+            {news_html_sections}
+        </table>
+        <p style="font-size: 12px; color: #aaa; text-align: center; margin-top: 30px;">本郵件由 AI 自動生成並發送，旨在提供技術趨勢參考。</p>
     </body>
     </html>
     """
-    msg.attach(MIMEText(html_content, 'html'))
+    
+    msg.attach(MIMEText(full_html, 'html'))
 
+    # 5. 發送郵件
     try:
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        print("郵件發送成功！")
+        print("資訊彙報郵件已成功發送。")
     except Exception as e:
-        print(f"郵件發送失敗: {e}")
+        print(f"發信失敗: {e}")
 else:
-    print("今日無抓取到符合條件的新聞，不發送郵件。")
+    print("本日指定來源中未發現相關更新，跳過發信步驟。")
