@@ -12,11 +12,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 改用 @main 直接抓取官方最新主線，避開舊版 Node 環境限制
       - name: 取得程式碼
         uses: actions/checkout@main
 
-      # 改用 @main 直接抓取官方最新主線，避開舊版 Node 環境限制
       - name: 設定 Python 環境
         uses: actions/setup-python@main
         with:
@@ -33,11 +31,3 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python scraper.py
-
-      - name: 將最新資料存回 GitHub
-        run: |
-          git config --global user.name "Automated Bot"
-          git config --global user.email "bot@example.com"
-          git add news_data.json
-          git commit -m "自動更新每日新聞資料" || echo "沒有新資料需要更新"
-          git push
