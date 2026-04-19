@@ -21,7 +21,7 @@ SITES = " (site:ithome.com.tw OR site:moda.gov.tw OR site:techorange.com OR site
 TOPICS = [
     "數位轉型", "PQC", "金融科技", "OCR", "自然人憑證", 
     "電子簽章", "生物辨識", "保險科技", "電子簽名", 
-    "數位發展部", "數位簽章"
+    "數位發展部", "數位簽章", "GEO"
 ]
 
 collected_news = []
