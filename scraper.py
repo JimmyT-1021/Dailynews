@@ -5,14 +5,14 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import google.generativeai as genai
 
-# 1. 讀取環境變數 (Google Search API 與 Gemini 金鑰)
+# 1. 讀取環境變數
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 SEARCH_API_KEY = os.environ.get("SEARCH_API_KEY")
 SEARCH_ENGINE_ID = os.environ.get("SEARCH_ENGINE_ID")
 
-# 2. 設定 Gemini AI (維持使用 1.5 Pro 旗艦模型確保摘要品質)
+# 2. 設定 Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
@@ -97,7 +97,8 @@ msg['From'] = GMAIL_ADDRESS
 msg['To'] = GMAIL_ADDRESS
 
 if collected_news:
-    msg['Subject'] = f"【每日情報彙編】{today_str} 產業要聞與技術趨勢"
+    # 變更點 1：有新聞時的專屬標題
+    msg['Subject'] = f"【每日Jimmy新聞】{today_str} 產業要聞與技術趨勢"
     news_html_sections = ""
     current_category = ""
     
@@ -137,7 +138,8 @@ if collected_news:
     </html>
     """
 else:
-    msg['Subject'] = f"【系統狀態更新】{today_str} 今日無相關產業動態"
+    # 變更點 2：無新聞時的專屬標題
+    msg['Subject'] = f"【每日Jimmy新聞】{today_str} 今日無相關產業動態"
     full_html = f"""
     <html>
     <body style="font-family: 'Microsoft JhengHei', sans-serif; max-width: 800px; margin: 20px auto; text-align: center;">
