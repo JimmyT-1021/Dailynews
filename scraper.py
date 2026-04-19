@@ -139,7 +139,7 @@ if collected_news:
     """
 else:
     # 變更點 2：無新聞時的專屬標題
-    msg['Subject'] = f"【每日Jimmy新聞】{today_str} 今日無相關產業動態"
+    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 今日無相關產業動態"
     full_html = f"""
     <html>
     <body style="font-family: 'Microsoft JhengHei', sans-serif; max-width: 800px; margin: 20px auto; text-align: center;">
