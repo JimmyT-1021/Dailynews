@@ -98,7 +98,7 @@ msg['To'] = GMAIL_ADDRESS
 
 if collected_news:
     # 變更點 1：有新聞時的專屬標題
-    msg['Subject'] = f"【每日Jimmy新聞】{today_str} 產業要聞與技術趨勢"
+    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 產業要聞與技術趨勢"
     news_html_sections = ""
     current_category = ""
     
