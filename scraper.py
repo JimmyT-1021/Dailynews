@@ -5,23 +5,26 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import google.generativeai as genai
 
-# 1. 讀取環境變數 (新增 Google Search API 金鑰)
+# 1. 讀取環境變數 (Google Search API 與 Gemini 金鑰)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 SEARCH_API_KEY = os.environ.get("SEARCH_API_KEY")
 SEARCH_ENGINE_ID = os.environ.get("SEARCH_ENGINE_ID")
 
-# 2. 設定 Gemini AI
+# 2. 設定 Gemini AI (維持使用 1.5 Pro 旗艦模型確保摘要品質)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
 # 精準搜尋設定：指定 7 大媒體來源
 SITES = "(site:ithome.com.tw OR site:moda.gov.tw OR site:techorange.com OR site:money.udn.com OR site:ctee.com.tw OR site:technews.tw OR site:bnext.com.tw)"
+
+# 擴充後的 15 項核心議題
 TOPICS = [
     "數位轉型", "PQC", "金融科技", "OCR", "自然人憑證", 
     "電子簽章", "生物辨識", "保險科技", "電子簽名", 
-    "數位發展部", "數位簽章", "FIDO", "GEO"
+    "數位發展部", "數位簽章", "FIDO", "GEO",
+    "開源模型", "LLM" 
 ]
 
 collected_news = []
@@ -123,39 +126,4 @@ if collected_news:
 
     full_html = f"""
     <html>
-    <body style="font-family: 'Microsoft JhengHei', sans-serif; max-width: 800px; margin: 20px auto;">
-        <h1 style="text-align: center; color: #333;">每日專屬產業情報</h1>
-        <p style="text-align: center; color: #666;">報告日期：{today_str}</p>
-        <table style="width: 100%; border-collapse: collapse;">
-            {news_html_sections}
-        </table>
-        <p style="font-size: 12px; color: #aaa; text-align: center; margin-top: 30px;">本郵件由 Google Search API 驅動，彙整過去 24 小時內之重要動態。</p>
-    </body>
-    </html>
-    """
-else:
-    msg['Subject'] = f"【系統狀態更新】{today_str} 今日無相關產業動態"
-    full_html = f"""
-    <html>
-    <body style="font-family: 'Microsoft JhengHei', sans-serif; max-width: 800px; margin: 20px auto; text-align: center;">
-        <h2 style="color: #555;">今日無相關產業更新</h2>
-        <p style="color: #666; font-size: 16px; line-height: 1.6;">
-            為您監控的 11 項關鍵字與 7 大指定媒體，在過去 24 小時內皆無符合條件的新聞發布。<br>
-            系統運作一切正常，我們明日將繼續為您追蹤最新動態。
-        </p>
-        <p style="font-size: 12px; color: #aaa; margin-top: 30px;">本郵件由自動化情報系統發送。</p>
-    </body>
-    </html>
-    """
-
-msg.attach(MIMEText(full_html, 'html'))
-
-# 5. 發送郵件
-try:
-    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-    server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-    server.send_message(msg)
-    server.quit()
-    print("郵件已成功發送。")
-except Exception as e:
-    print(f"發信失敗: {e}")
+    <body style="font-family: 'Microsoft JhengHei', sans-serif; max-width: 800px;
