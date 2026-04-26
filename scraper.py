@@ -15,7 +15,7 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 
 # 2. 設定 Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-pro-latest')
+# model = genai.GenerativeModel('gemini-1.5-flash')
 
 # 3. 專屬 RSS 資料流清單 (共 13 組)
 RSS_FEEDS = [
