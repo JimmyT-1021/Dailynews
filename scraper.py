@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # 1. 讀取環境變數
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -38,10 +39,9 @@ seen_urls = set()
 namespaces = {'atom': 'http://www.w3.org/2005/Atom'}
 
 def get_page_content(url):
-    """針對指定媒體之內文擷取邏輯"""
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Referer': 'https://www.google.com/',
         }
@@ -59,7 +59,6 @@ def get_page_content(url):
         paragraphs = soup.find_all('p')
         text = ' '.join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 35])
         
-        # 針對防護較強的網站做 meta description 備援
         if len(text) < 100:
             meta_desc = soup.find("meta", property="og:description")
             if meta_desc:
@@ -74,10 +73,23 @@ def summarize_content(text, topic, title):
         return f"已鎖定關於【{topic}】的報導，但原始網頁具備存取限制。建議您點擊標題直接前往閱讀。"
     
     prompt = f"你是一位專業科技分析師。請為讀者『Jimmy』摘要以下文章，字數 150 字內，語氣專業精確，並點出產業影響。標題：{title}\n內容：{text}"
+    
+    # 調低安全門檻，避免資安或犯罪新聞被誤判攔截
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    }
+    
     try:
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, safety_settings=safety_settings)
+        # 捕捉 AI 被安全機制完全阻擋的情況
+        if not response.parts:
+            return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
         return response.text.strip().replace('\n', ' ')
-    except:
+    except Exception as e:
+        print(f"  [AI 摘要失敗] {title} - 錯誤原因: {e}")
         return "AI 摘要模組暫時無回應，請點擊標題查看全文。"
 
 # 設定時間邊界：僅處理過去 24 小時內的快訊
@@ -95,7 +107,6 @@ for feed_url in RSS_FEEDS:
             
         root = ET.fromstring(response.content)
         
-        # 從 feed title 中動態萃取關鍵字
         feed_title = root.find('atom:title', namespaces).text
         topic_match = re.search(r'Google 快訊 - (.*?)\s*\(site:', feed_title)
         topic = topic_match.group(1).strip() if topic_match else "產業焦點"
@@ -104,20 +115,17 @@ for feed_url in RSS_FEEDS:
         print(f"解析【{topic}】RSS 流... 發現 {len(entries)} 筆紀錄")
         
         for entry in entries:
-            # 增強型時間保護機制
             published_element = entry.find('atom:published', namespaces)
             if published_element is not None and published_element.text:
                 published_str = published_element.text
                 published_time = datetime.strptime(published_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 if published_time < time_threshold:
-                    continue # 跳過超過 24 小時的舊資訊
+                    continue 
                 
             raw_title = entry.find('atom:title', namespaces).text
-            # 清理 HTML 標籤
             clean_title = re.sub('<[^<]+>', '', raw_title)
             
             raw_link = entry.find('atom:link', namespaces).attrib['href']
-            # 解析 Google 重新導向網址以取得真實目標網址
             parsed_link = urllib.parse.urlparse(raw_link)
             query_params = urllib.parse.parse_qs(parsed_link.query)
             actual_url = query_params.get('url', [raw_link])[0]
@@ -135,7 +143,9 @@ for feed_url in RSS_FEEDS:
                     "url": actual_url,
                     "summary": summary
                 })
-                time.sleep(1)
+                
+                # 關鍵修復：強制暫停 5 秒，確保不會超過每分鐘 15 次的免費額度限制
+                time.sleep(5) 
                 
     except Exception as e:
         print(f"解析過程中發生異常: {e}")
@@ -148,8 +158,6 @@ msg['To'] = GMAIL_ADDRESS
 
 if collected_news:
     msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 產業要聞與技術趨勢"
-    
-    # 根據分類進行排序
     collected_news.sort(key=lambda x: x['category'])
     
     news_html = ""
@@ -164,8 +172,6 @@ if collected_news:
                 </td>
             </tr>
             """
-        
-        # 修正語法：使用三重雙引號以避免單雙引號衝突
         news_html += f"""
         <tr>
             <td style="padding:15px 10px; border-bottom:1px solid #eee;">
