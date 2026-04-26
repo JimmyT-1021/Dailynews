@@ -41,7 +41,7 @@ def get_page_content(url):
     """針對指定媒體之內文擷取邏輯"""
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Referer': 'https://www.google.com/',
         }
@@ -59,6 +59,12 @@ def get_page_content(url):
         paragraphs = soup.find_all('p')
         text = ' '.join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 35])
         
+        # 針對防護較強的網站做 meta description 備援
+        if len(text) < 100:
+            meta_desc = soup.find("meta", property="og:description")
+            if meta_desc:
+                text = meta_desc.get("content", "")
+                
         return text[:3000]
     except Exception as e:
         return ""
@@ -89,9 +95,100 @@ for feed_url in RSS_FEEDS:
             
         root = ET.fromstring(response.content)
         
-        # 從 feed title 中動態萃取關鍵字 (例如 "Google 快訊 - 數位簽章 (site:...)")
+        # 從 feed title 中動態萃取關鍵字
         feed_title = root.find('atom:title', namespaces).text
         topic_match = re.search(r'Google 快訊 - (.*?)\s*\(site:', feed_title)
         topic = topic_match.group(1).strip() if topic_match else "產業焦點"
         
         entries = root.findall('atom:entry', namespaces)
+        print(f"解析【{topic}】RSS 流... 發現 {len(entries)} 筆紀錄")
+        
+        for entry in entries:
+            # 增強型時間保護機制
+            published_element = entry.find('atom:published', namespaces)
+            if published_element is not None and published_element.text:
+                published_str = published_element.text
+                published_time = datetime.strptime(published_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if published_time < time_threshold:
+                    continue # 跳過超過 24 小時的舊資訊
+                
+            raw_title = entry.find('atom:title', namespaces).text
+            # 清理 HTML 標籤
+            clean_title = re.sub('<[^<]+>', '', raw_title)
+            
+            raw_link = entry.find('atom:link', namespaces).attrib['href']
+            # 解析 Google 重新導向網址以取得真實目標網址
+            parsed_link = urllib.parse.urlparse(raw_link)
+            query_params = urllib.parse.parse_qs(parsed_link.query)
+            actual_url = query_params.get('url', [raw_link])[0]
+            
+            if actual_url not in seen_urls:
+                seen_urls.add(actual_url)
+                print(f"  └ 新增: {clean_title}")
+                
+                content = get_page_content(actual_url)
+                summary = summarize_content(content, topic, clean_title)
+                
+                collected_news.append({
+                    "category": topic,
+                    "title": clean_title,
+                    "url": actual_url,
+                    "summary": summary
+                })
+                time.sleep(1)
+                
+    except Exception as e:
+        print(f"解析過程中發生異常: {e}")
+
+# 4. 構建與發送郵件
+today_str = datetime.now().strftime("%Y-%m-%d")
+msg = MIMEMultipart()
+msg['From'] = GMAIL_ADDRESS
+msg['To'] = GMAIL_ADDRESS
+
+if collected_news:
+    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 產業要聞與技術趨勢"
+    
+    # 根據分類進行排序
+    collected_news.sort(key=lambda x: x['category'])
+    
+    news_html = ""
+    current_cat = ""
+    for n in collected_news:
+        if n['category'] != current_cat:
+            current_cat = n['category']
+            news_html += f"""
+            <tr style="background:#f4f8ff;">
+                <td style="padding:12px; border-left:5px solid #0056b3;">
+                    <b>■ {current_cat}</b>
+                </td>
+            </tr>
+            """
+        
+        # 修正語法：使用三重雙引號以避免單雙引號衝突
+        news_html += f"""
+        <tr>
+            <td style="padding:15px 10px; border-bottom:1px solid #eee;">
+                <div style="font-size:16px; font-weight:bold; margin-bottom:5px;">
+                    <a href="{n['url']}" style="color:#0056b3; text-decoration:none;">▷ {n['title']}</a>
+                </div>
+                <div style="font-size:14px; color:#333; line-height:1.6;">{n['summary']}</div>
+            </td>
+        </tr>
+        """
+        
+    body_html = f"<html><body><table style='width:100%; border-collapse:collapse; font-family: sans-serif;'>{news_html}</table></body></html>"
+else:
+    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 今日無相關產業動態"
+    body_html = "<html><body><p>RSS 監控清單內，過去 24 小時並無發布新資訊。</p></body></html>"
+
+msg.attach(MIMEText(body_html, 'html'))
+
+try:
+    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+    server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+    server.send_message(msg)
+    server.quit()
+    print("發信程序完成。")
+except Exception as e:
+    print(f"發信失敗: {e}")
