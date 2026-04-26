@@ -74,7 +74,6 @@ def summarize_content(text, topic, title):
     
     prompt = f"你是一位專業科技分析師。請為讀者『Jimmy』摘要以下文章，字數 150 字內，語氣專業精確，並點出產業影響。標題：{title}\n內容：{text}"
     
-    # 調低安全門檻，避免資安或犯罪新聞被誤判攔截
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
@@ -84,7 +83,6 @@ def summarize_content(text, topic, title):
     
     try:
         response = model.generate_content(prompt, safety_settings=safety_settings)
-        # 捕捉 AI 被安全機制完全阻擋的情況
         if not response.parts:
             return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
         return response.text.strip().replace('\n', ' ')
@@ -111,6 +109,9 @@ for feed_url in RSS_FEEDS:
         topic_match = re.search(r'Google 快訊 - (.*?)\s*\(site:', feed_title)
         topic = topic_match.group(1).strip() if topic_match else "產業焦點"
         
+        # 產生純淨的驗證關鍵字（去除可能存在的雙引號並轉小寫，確保比對精準）
+        verification_keyword = topic.replace('"', '').replace('“', '').replace('”', '').strip().lower()
+        
         entries = root.findall('atom:entry', namespaces)
         print(f"解析【{topic}】RSS 流... 發現 {len(entries)} 筆紀錄")
         
@@ -132,9 +133,16 @@ for feed_url in RSS_FEEDS:
             
             if actual_url not in seen_urls:
                 seen_urls.add(actual_url)
-                print(f"  └ 新增: {clean_title}")
                 
+                # 抓取網頁純淨內文
                 content = get_page_content(actual_url)
+                
+                # 【二次攔截防線】：如果標題與純淨內文中，完全找不到關鍵字，則視為雜訊並丟棄
+                if verification_keyword not in clean_title.lower() and verification_keyword not in content.lower():
+                    print(f"  └ [已過濾雜訊] 內文無實質關鍵字：{clean_title}")
+                    continue
+                
+                print(f"  └ 新增並摘要: {clean_title}")
                 summary = summarize_content(content, topic, clean_title)
                 
                 collected_news.append({
@@ -144,7 +152,6 @@ for feed_url in RSS_FEEDS:
                     "summary": summary
                 })
                 
-                # 關鍵修復：強制暫停 5 秒，確保不會超過每分鐘 15 次的免費額度限制
                 time.sleep(5) 
                 
     except Exception as e:
@@ -186,7 +193,7 @@ if collected_news:
     body_html = f"<html><body><table style='width:100%; border-collapse:collapse; font-family: sans-serif;'>{news_html}</table></body></html>"
 else:
     msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 今日無相關產業動態"
-    body_html = "<html><body><p>RSS 監控清單內，過去 24 小時並無發布新資訊。</p></body></html>"
+    body_html = "<html><body><p>經過防雜訊過濾後，過去 24 小時內並無高度相關的產業動態。</p></body></html>"
 
 msg.attach(MIMEText(body_html, 'html'))
 
