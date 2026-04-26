@@ -72,7 +72,7 @@ def summarize_content(text, topic, title):
     if len(text) < 80:
         return f"已鎖定關於【{topic}】的報導，但原始網頁具備存取限制。建議您點擊標題直接前往閱讀。"
     
-    prompt = f"你是一位專業科技分析師。請為讀者『Jimmy』摘要以下文章，字數 150 字內，語氣專業精確，並點出產業影響。標題：{title}\n內容：{text}"
+    prompt = f"你是一位麥肯錫等級的科技顧問。請為讀者『Jimmy』摘要與推論以下文章，總字數需限制100 字內，摘要約占用60%的字數，推論約占40%字數，推論須為對該產業影響，語氣須專業精確。標題：{title}\n內容：{text}"
     
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
