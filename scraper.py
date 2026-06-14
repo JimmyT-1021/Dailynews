@@ -13,7 +13,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 
-# 2. 設定 Gemini AI
+# 2. 設定 Gemini AI (使用最新世代 Flash 模型)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
@@ -32,6 +32,13 @@ RSS_FEEDS = [
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/7518766543809525223",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/2507623650954551914",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/2507623650954551348"
+]
+
+# 4. 股市與財報雜訊排除參數庫 (可依需求隨時增減)
+EXCLUDE_KEYWORDS = [
+    "股價", "營收", "大盤", "外資", "EPS", "台股", "升息", 
+    "殖利率", "投機", "多頭", "空頭", "個股", "法人", 
+    "買超", "賣超", "目標價", "股市", "除息", "配息"
 ]
 
 collected_news = []
@@ -72,7 +79,16 @@ def summarize_content(text, topic, title):
     if len(text) < 80:
         return f"已鎖定關於【{topic}】的報導，但原始網頁具備存取限制。建議您點擊標題直接前往閱讀。"
     
-    prompt = f"你是一位麥肯錫等級的科技顧問。請為讀者『Jimmy』摘要與推論以下文章，總字數需限制100 字內，摘要約占用60%的字數，推論約占40%字數，推論須為對該產業影響，語氣須專業精確。標題：{title}\n內容：{text}"
+    # 升級版系統提示詞：絕對格式限制、字數限制與語意審查
+    prompt = f"""你是一位專業科技分析師。請嚴格遵守以下所有規則來為讀者『Jimmy』處理以下文章：
+1. 開頭必須一字不差地使用：「Jimmy您好，摘要如下，」
+2. 嚴禁使用任何 Markdown 符號（包含但不限於 ** 或 ：）。
+3. 字數嚴格限制在 65 字以內（若技術內容極度複雜，最多僅能放寬至 75 字）。
+4. 內容必須絕對聚焦於：科技發展、運用場景、實際痛點或使用者反饋。
+5. 審查機制：若判斷該文章核心為股市分析、股價預測、企業營收或金融市場動態，請直接回傳「REJECT_FINANCE」，不要輸出任何其他文字。
+
+標題：{title}
+內容：{text}"""
     
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
@@ -85,12 +101,11 @@ def summarize_content(text, topic, title):
         response = model.generate_content(prompt, safety_settings=safety_settings)
         if not response.parts:
             return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
-        return response.text.strip().replace('\n', ' ')
+        return response.text.strip().replace('\n', '')
     except Exception as e:
         print(f"  [AI 摘要失敗] {title} - 錯誤原因: {e}")
         return "AI 摘要模組暫時無回應，請點擊標題查看全文。"
 
-# 設定時間邊界：僅處理過去 24 小時內的快訊
 now_utc = datetime.now(timezone.utc)
 time_threshold = now_utc - timedelta(hours=24)
 
@@ -109,7 +124,6 @@ for feed_url in RSS_FEEDS:
         topic_match = re.search(r'Google 快訊 - (.*?)\s*\(site:', feed_title)
         topic = topic_match.group(1).strip() if topic_match else "產業焦點"
         
-        # 產生純淨的驗證關鍵字（去除可能存在的雙引號並轉小寫，確保比對精準）
         verification_keyword = topic.replace('"', '').replace('“', '').replace('”', '').strip().lower()
         
         entries = root.findall('atom:entry', namespaces)
@@ -134,16 +148,24 @@ for feed_url in RSS_FEEDS:
             if actual_url not in seen_urls:
                 seen_urls.add(actual_url)
                 
-                # 抓取網頁純淨內文
                 content = get_page_content(actual_url)
                 
-                # 【二次攔截防線】：如果標題與純淨內文中，完全找不到關鍵字，則視為雜訊並丟棄
+                # 基礎攔截：確保含有目標關鍵字
                 if verification_keyword not in clean_title.lower() and verification_keyword not in content.lower():
-                    print(f"  └ [已過濾雜訊] 內文無實質關鍵字：{clean_title}")
                     continue
                 
-                print(f"  └ 新增並摘要: {clean_title}")
+                # 第一層防線：靜態排除股市與財報雜訊
+                if any(keyword in clean_title for keyword in EXCLUDE_KEYWORDS) or any(keyword in content for keyword in EXCLUDE_KEYWORDS):
+                    print(f"  └ [已過濾股市雜訊-字詞比對]: {clean_title}")
+                    continue
+
+                print(f"  └ 新增並送交分析: {clean_title}")
                 summary = summarize_content(content, topic, clean_title)
+                
+                # 第二層防線：AI 語意判定為財經新聞
+                if "REJECT_FINANCE" in summary:
+                    print(f"  └ [已過濾股市雜訊-AI語意審查]: {clean_title}")
+                    continue
                 
                 collected_news.append({
                     "category": topic,
@@ -157,7 +179,7 @@ for feed_url in RSS_FEEDS:
     except Exception as e:
         print(f"解析過程中發生異常: {e}")
 
-# 4. 構建與發送郵件
+# 5. 構建與發送郵件
 today_str = datetime.now().strftime("%Y-%m-%d")
 msg = MIMEMultipart()
 msg['From'] = GMAIL_ADDRESS
@@ -193,7 +215,7 @@ if collected_news:
     body_html = f"<html><body><table style='width:100%; border-collapse:collapse; font-family: sans-serif;'>{news_html}</table></body></html>"
 else:
     msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 今日無相關產業動態"
-    body_html = "<html><body><p>經過防雜訊過濾後，過去 24 小時內並無高度相關的產業動態。</p></body></html>"
+    body_html = "<html><body><p>經過股市雜訊過濾與關鍵字比對後，過去 24 小時內並無高度相關的技術發展動態。</p></body></html>"
 
 msg.attach(MIMEText(body_html, 'html'))
 
