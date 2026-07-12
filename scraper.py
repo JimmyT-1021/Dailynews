@@ -41,7 +41,7 @@ EXCLUDE_KEYWORDS = [
     "買超", "賣超", "目標價", "股市", "除息", "配息"
 ]
 
-# 5. 付費牆與訂閱特徵字庫 (新增)
+# 5. 付費牆與訂閱特徵字庫
 PAYWALL_KEYWORDS = [
     "訂閱解鎖", "VIP專屬", "付費會員", "付費解鎖", "訂閱觀看全文",
     "加入會員觀看全文", "解鎖全文", "VIP會員", "限訂閱者閱讀"
@@ -66,7 +66,6 @@ def get_page_content(url):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 新增：掃描全網頁純文字，偵測是否觸發付費牆
         full_text_no_spaces = soup.text.replace(' ', '').replace('\n', '')
         if any(keyword in full_text_no_spaces for keyword in PAYWALL_KEYWORDS):
             return "PAYWALL_DETECTED"
@@ -107,19 +106,27 @@ def summarize_content(text, topic, title):
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
     }
     
-    try:
-        response = model.generate_content(prompt, safety_settings=safety_settings)
-        if not response.parts:
-            return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
-        return response.text.strip().replace('\n', '')
-    except Exception as e:
-        print(f"  [AI 摘要失敗] {title} - 錯誤原因: {e}")
-        return "AI 摘要模組暫時無回應，請點擊標題查看全文。"
+    # 導入防 429 重試機制
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt, safety_settings=safety_settings)
+            if not response.parts:
+                return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
+            return response.text.strip().replace('\n', '')
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg and attempt < max_retries - 1:
+                wait_time = 20 * (attempt + 1)
+                print(f"  [API 流量控管] 觸發 429 限制，暫停 {wait_time} 秒後進行第 {attempt+2} 次重試...")
+                time.sleep(wait_time)
+            else:
+                print(f"  [AI 摘要失敗] {title} - 錯誤原因: {e}")
+                return "AI 摘要模組暫時無回應，請點擊標題查看全文。"
 
 def generate_business_analysis(news_list):
-    """將今日新聞清單交給 AI 產出 Top 3 商業深度洞察 (新增)"""
     if len(news_list) < 3:
-        return "" # 新聞量不足時不強制產出
+        return ""
     
     news_text = ""
     for i, n in enumerate(news_list):
@@ -135,166 +142,4 @@ def generate_business_analysis(news_list):
     <h4 style="color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; margin-bottom: 10px;">一、 商業變現路徑 (Revenue & Cost Drivers)</h4>
     <ul style="font-size: 14px; color: #444; margin-top: 0;">
         <li><strong>營收增長 (Top-line Growth)：</strong>（具體分析說明）</li>
-        <li><strong>成本優化 (Bottom-line Savings)：</strong>（具體分析說明）</li>
-    </ul>
-
-    <h4 style="color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; margin-bottom: 10px;">二、 產業衝擊與機會 (Impact & Opportunities)</h4>
-    <ul style="font-size: 14px; color: #444; margin-top: 0;">
-        <li><strong>機會 (Value Creation)：</strong>（具體分析說明）</li>
-        <li><strong>衝擊 (Value Destruction)：</strong>（具體分析說明）</li>
-    </ul>
-
-    <h4 style="color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; margin-bottom: 10px;">三、 影響對象精準定位 (Stakeholder Mapping)</h4>
-    <ul style="font-size: 14px; color: #444; margin-top: 0;">
-        <li><strong>直接受益者：</strong>（具體點出獲益對象）</li>
-        <li><strong>直接受災者：</strong>（具體點出受衝擊對象）</li>
-    </ul>
-</div>
-
-今日新聞清單如下：
-{news_text}
-"""
-    try:
-        response = model.generate_content(prompt)
-        if response.text:
-            return f"""
-            <div style="background-color: #eaf1f8; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
-                <h2 style="color: #d32f2f; margin-top: 0; text-align: center;">🏆 今日 Top 3 商業戰略洞察</h2>
-                <p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 20px;">基於今日產業動態，為您淬鍊出三大最具變現潛力之情報分析</p>
-                {response.text.strip().replace('```html', '').replace('```', '')}
-            </div>
-            """
-        return ""
-    except Exception as e:
-        print(f"  [AI 商業分析生成失敗] 錯誤原因: {e}")
-        return ""
-
-now_utc = datetime.now(timezone.utc)
-time_threshold = now_utc - timedelta(hours=24)
-
-print(f"--- 啟動 RSS 訂閱解析任務: {datetime.now()} ---")
-
-for feed_url in RSS_FEEDS:
-    try:
-        response = requests.get(feed_url, timeout=15)
-        if response.status_code != 200:
-            print(f"無法讀取 RSS: {feed_url}")
-            continue
-            
-        root = ET.fromstring(response.content)
-        
-        feed_title = root.find('atom:title', namespaces).text
-        topic_match = re.search(r'Google 快訊 - (.*?)\s*\(site:', feed_title)
-        topic = topic_match.group(1).strip() if topic_match else "產業焦點"
-        
-        verification_keyword = topic.replace('"', '').replace('“', '').replace('”', '').strip().lower()
-        
-        entries = root.findall('atom:entry', namespaces)
-        print(f"解析【{topic}】RSS 流... 發現 {len(entries)} 筆紀錄")
-        
-        for entry in entries:
-            published_element = entry.find('atom:published', namespaces)
-            if published_element is not None and published_element.text:
-                published_str = published_element.text
-                published_time = datetime.strptime(published_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if published_time < time_threshold:
-                    continue 
-                
-            raw_title = entry.find('atom:title', namespaces).text
-            clean_title = re.sub('<[^<]+>', '', raw_title)
-            
-            raw_link = entry.find('atom:link', namespaces).attrib['href']
-            parsed_link = urllib.parse.urlparse(raw_link)
-            query_params = urllib.parse.parse_qs(parsed_link.query)
-            actual_url = query_params.get('url', [raw_link])[0]
-            
-            if actual_url not in seen_urls:
-                seen_urls.add(actual_url)
-                
-                content = get_page_content(actual_url)
-                
-                # 新增攔截：若偵測到付費牆特徵，直接捨棄不處理
-                if content == "PAYWALL_DETECTED":
-                    print(f"  └ [已過濾付費內容]: {clean_title}")
-                    continue
-                
-                if verification_keyword not in clean_title.lower() and verification_keyword not in content.lower():
-                    continue
-                
-                if any(keyword in clean_title for keyword in EXCLUDE_KEYWORDS) or any(keyword in content for keyword in EXCLUDE_KEYWORDS):
-                    print(f"  └ [已過濾股市雜訊-字詞比對]: {clean_title}")
-                    continue
-
-                print(f"  └ 新增並送交分析: {clean_title}")
-                summary = summarize_content(content, topic, clean_title)
-                
-                if "REJECT_FINANCE" in summary:
-                    print(f"  └ [已過濾股市雜訊-AI語意審查]: {clean_title}")
-                    continue
-                
-                collected_news.append({
-                    "category": topic,
-                    "title": clean_title,
-                    "url": actual_url,
-                    "summary": summary
-                })
-                
-                time.sleep(5) 
-                
-    except Exception as e:
-        print(f"解析過程中發生異常: {e}")
-
-# 5. 構建與發送郵件
-today_str = datetime.now().strftime("%Y-%m-%d")
-msg = MIMEMultipart()
-msg['From'] = GMAIL_ADDRESS
-msg['To'] = GMAIL_ADDRESS
-
-if collected_news:
-    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 產業要聞與商業戰略洞察"
-    collected_news.sort(key=lambda x: x['category'])
-    
-    # 產出 Top 3 商業深度洞察 (新增)
-    business_analysis_html = generate_business_analysis(collected_news)
-    
-    news_html = ""
-    current_cat = ""
-    for n in collected_news:
-        if n['category'] != current_cat:
-            current_cat = n['category']
-            news_html += f"""
-            <tr style="background:#f4f8ff;">
-                <td style="padding:12px; border-left:5px solid #0056b3; margin-top:10px;">
-                    <b>■ {current_cat}</b>
-                </td>
-            </tr>
-            """
-        news_html += f"""
-        <tr>
-            <td style="padding:15px 10px; border-bottom:1px solid #eee;">
-                <div style="font-size:16px; font-weight:bold; margin-bottom:5px;">
-                    <a href="{n['url']}" style="color:#0056b3; text-decoration:none;">▷ {n['title']}</a>
-                </div>
-                <div style="font-size:14px; color:#333; line-height:1.6;">{n['summary']}</div>
-            </td>
-        </tr>
-        """
-        
-    body_html = f"<html><body style='font-family: sans-serif; max-width: 800px; margin: 0 auto;'>"
-    body_html += business_analysis_html
-    body_html += f"<h3>📰 今日情報總覽</h3>"
-    body_html += f"<table style='width:100%; border-collapse:collapse;'>{news_html}</table></body></html>"
-else:
-    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 今日無相關產業動態"
-    body_html = "<html><body><p>經過股市雜訊與付費牆過濾後，過去 24 小時內並無高度相關的技術發展動態。</p></body></html>"
-
-msg.attach(MIMEText(body_html, 'html'))
-
-try:
-    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-    server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-    server.send_message(msg)
-    server.quit()
-    print("發信程序完成。")
-except Exception as e:
-    print(f"發信失敗: {e}")
+        <li><strong>成本優化 (Bottom-line Savings)：</strong>（具體分析說明
