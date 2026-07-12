@@ -13,9 +13,27 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 
-# 2. 設定 Gemini AI (使用最新世代 Flash 模型)
+# 2. 設定 Gemini AI (動態抓取可用模型，徹底解決版本更迭問題)
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-flash')
+
+# 步驟 A：動態調閱此 API 金鑰權限下，所有支援文字生成的模型清單
+available_models = [
+    m.name for m in genai.list_models() 
+    if 'generateContent' in m.supported_generation_methods
+]
+
+# 步驟 B：優先篩選出帶有 'flash' 的模型，若無則選用清單中第一個可用模型
+target_model_name = None
+for name in available_models:
+    if 'flash' in name.lower():
+        target_model_name = name
+        break
+
+if not target_model_name and available_models:
+    target_model_name = available_models[0]
+
+print(f"--- 系統已自動綁定模型：{target_model_name} ---")
+model = genai.GenerativeModel(target_model_name)
 
 # 3. 專屬 RSS 資料流清單 (共 13 組)
 RSS_FEEDS = [
