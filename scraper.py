@@ -41,6 +41,12 @@ EXCLUDE_KEYWORDS = [
     "買超", "賣超", "目標價", "股市", "除息", "配息"
 ]
 
+# 5. 付費牆與訂閱特徵字庫 (新增)
+PAYWALL_KEYWORDS = [
+    "訂閱解鎖", "VIP專屬", "付費會員", "付費解鎖", "訂閱觀看全文",
+    "加入會員觀看全文", "解鎖全文", "VIP會員", "限訂閱者閱讀"
+]
+
 collected_news = []
 seen_urls = set()
 namespaces = {'atom': 'http://www.w3.org/2005/Atom'}
@@ -54,19 +60,36 @@ def get_page_content(url):
         }
         response = requests.get(url, headers=headers, timeout=15)
         response.encoding = 'utf-8'
-        if response.status_code != 200: return ""
+        
+        if response.status_code != 200:
+            return ""
+            
         soup = BeautifulSoup(response.text, 'html.parser')
-        for tag in soup(["script", "style", "header", "footer", "nav", "aside"]): tag.decompose()
+        
+        # 新增：掃描全網頁純文字，偵測是否觸發付費牆
+        full_text_no_spaces = soup.text.replace(' ', '').replace('\n', '')
+        if any(keyword in full_text_no_spaces for keyword in PAYWALL_KEYWORDS):
+            return "PAYWALL_DETECTED"
+        
+        for tag in soup(["script", "style", "header", "footer", "nav", "aside"]):
+            tag.decompose()
+            
         paragraphs = soup.find_all('p')
         text = ' '.join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 35])
+        
         if len(text) < 100:
             meta_desc = soup.find("meta", property="og:description")
-            if meta_desc: text = meta_desc.get("content", "")
+            if meta_desc:
+                text = meta_desc.get("content", "")
+                
         return text[:3000]
-    except: return ""
+    except Exception as e:
+        return ""
 
 def summarize_content(text, topic, title):
-    if len(text) < 80: return f"已鎖定關於【{topic}】的報導，但原始網頁具備存取限制。建議您點擊標題直接前往閱讀。"
+    if len(text) < 80:
+        return f"已鎖定關於【{topic}】的報導，但原始網頁具備存取限制。建議您點擊標題直接前往閱讀。"
+    
     prompt = f"""你是一位專業科技分析師。請嚴格遵守以下所有規則來為讀者『Jimmy』處理以下文章：
 1. 開頭必須一字不差地使用：「Jimmy您好，摘要如下，」
 2. 嚴禁使用任何 Markdown 符號（包含但不限於 ** 或 ：）。
@@ -76,70 +99,75 @@ def summarize_content(text, topic, title):
 
 標題：{title}
 內容：{text}"""
+    
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
     }
+    
     try:
         response = model.generate_content(prompt, safety_settings=safety_settings)
-        if not response.parts: return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
+        if not response.parts:
+            return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
         return response.text.strip().replace('\n', '')
     except Exception as e:
         print(f"  [AI 摘要失敗] {title} - 錯誤原因: {e}")
         return "AI 摘要模組暫時無回應，請點擊標題查看全文。"
 
-# === 新增：第二階段商業深度分析功能 ===
 def generate_business_analysis(news_list):
-    if not news_list: return ""
+    """將今日新聞清單交給 AI 產出 Top 3 商業深度洞察 (新增)"""
+    if len(news_list) < 3:
+        return "" # 新聞量不足時不強制產出
     
-    # 將今日所有新聞摘要組合給 AI 閱讀
-    catalog = ""
+    news_text = ""
     for i, n in enumerate(news_list):
-        catalog += f"[{i+1}] 標題：{n['title']}\n摘要：{n['summary']}\n\n"
+        news_text += f"[{i+1}] 標題：{n['title']}\n摘要：{n['summary']}\n\n"
         
-    prompt = f"""你是一位頂尖的商業戰略分析師。以下是今日收集到的科技產業新聞清單：
+    prompt = f"""你是一位頂尖的商業戰略分析師。請從以下今日新聞清單中，挑選出「最具商業變現潛力與產業影響力」的 3 篇新聞，並嚴格依照以下格式輸出 HTML 程式碼（不需輸出 ```html 標籤，直接輸出 HTML 內容即可，方便我嵌入信件中）。
 
-{catalog}
-
-請從中挑選出「最多 3 篇」最具有商業效應與產業變現潛力的新聞，並針對這幾篇進行深度商業分析。
-請嚴格依照下方格式輸出，並直接使用 HTML 標籤排版以便嵌入信件中。請勿輸出 ```html 等 Markdown 標記，直接輸出乾淨的 HTML 碼即可。
-
-針對每一篇的輸出格式必須如下：
-
-<div style="background-color: #f8f9fa; padding: 15px; margin-bottom: 20px; border-radius: 8px; border-left: 5px solid #0056b3;">
-    <h3 style="color: #0056b3; margin-top: 0;">新聞：[填入原新聞標題]</h3>
+格式要求：
+對於每一篇選出的新聞，請產出以下 HTML 結構：
+<div style="background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+    <h3 style="color: #0056b3; margin-top: 0; margin-bottom: 15px;">新聞標題（填寫原文標題）</h3>
     
-    <h4 style="color: #333; margin-bottom: 5px;">一、 商業變現路徑 (Revenue & Cost Drivers)</h4>
-    <ul style="margin-top: 0; padding-left: 20px; line-height: 1.6;">
-        <li><b>1.營收增長 (Top-line Growth)：</b>[具體分析]</li>
-        <li><b>2.成本優化 (Bottom-line Savings)：</b>[具體分析]</li>
+    <h4 style="color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; margin-bottom: 10px;">一、 商業變現路徑 (Revenue & Cost Drivers)</h4>
+    <ul style="font-size: 14px; color: #444; margin-top: 0;">
+        <li><strong>營收增長 (Top-line Growth)：</strong>（具體分析說明）</li>
+        <li><strong>成本優化 (Bottom-line Savings)：</strong>（具體分析說明）</li>
     </ul>
 
-    <h4 style="color: #333; margin-bottom: 5px;">二、 產業衝擊與機會 (Impact & Opportunities)</h4>
-    <ul style="margin-top: 0; padding-left: 20px; line-height: 1.6;">
-        <li><b>1.機會 (Value Creation)：</b>[具體分析]</li>
-        <li><b>2.衝擊 (Value Destruction)：</b>[具體分析]</li>
+    <h4 style="color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; margin-bottom: 10px;">二、 產業衝擊與機會 (Impact & Opportunities)</h4>
+    <ul style="font-size: 14px; color: #444; margin-top: 0;">
+        <li><strong>機會 (Value Creation)：</strong>（具體分析說明）</li>
+        <li><strong>衝擊 (Value Destruction)：</strong>（具體分析說明）</li>
     </ul>
 
-    <h4 style="color: #333; margin-bottom: 5px;">三、 影響對象精準定位 (Stakeholder Mapping)</h4>
-    <ul style="margin-top: 0; padding-left: 20px; line-height: 1.6;">
-        <li><b>1.直接受益者：</b>[具體分析]</li>
-        <li><b>2.直接受災者：</b>[具體分析]</li>
+    <h4 style="color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; margin-bottom: 10px;">三、 影響對象精準定位 (Stakeholder Mapping)</h4>
+    <ul style="font-size: 14px; color: #444; margin-top: 0;">
+        <li><strong>直接受益者：</strong>（具體點出獲益對象）</li>
+        <li><strong>直接受災者：</strong>（具體點出受衝擊對象）</li>
     </ul>
 </div>
+
+今日新聞清單如下：
+{news_text}
 """
     try:
         response = model.generate_content(prompt)
-        # 清除可能殘留的 markdown 標記
-        html_output = response.text.strip().replace('```html', '').replace('```', '')
-        return html_output
-    except Exception as e:
-        print(f"產生商業分析失敗: {e}")
+        if response.text:
+            return f"""
+            <div style="background-color: #eaf1f8; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+                <h2 style="color: #d32f2f; margin-top: 0; text-align: center;">🏆 今日 Top 3 商業戰略洞察</h2>
+                <p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 20px;">基於今日產業動態，為您淬鍊出三大最具變現潛力之情報分析</p>
+                {response.text.strip().replace('```html', '').replace('```', '')}
+            </div>
+            """
         return ""
-
-# ==========================================
+    except Exception as e:
+        print(f"  [AI 商業分析生成失敗] 錯誤原因: {e}")
+        return ""
 
 now_utc = datetime.now(timezone.utc)
 time_threshold = now_utc - timedelta(hours=24)
@@ -149,23 +177,32 @@ print(f"--- 啟動 RSS 訂閱解析任務: {datetime.now()} ---")
 for feed_url in RSS_FEEDS:
     try:
         response = requests.get(feed_url, timeout=15)
-        if response.status_code != 200: continue
+        if response.status_code != 200:
+            print(f"無法讀取 RSS: {feed_url}")
+            continue
+            
         root = ET.fromstring(response.content)
+        
         feed_title = root.find('atom:title', namespaces).text
         topic_match = re.search(r'Google 快訊 - (.*?)\s*\(site:', feed_title)
         topic = topic_match.group(1).strip() if topic_match else "產業焦點"
+        
         verification_keyword = topic.replace('"', '').replace('“', '').replace('”', '').strip().lower()
+        
         entries = root.findall('atom:entry', namespaces)
+        print(f"解析【{topic}】RSS 流... 發現 {len(entries)} 筆紀錄")
         
         for entry in entries:
             published_element = entry.find('atom:published', namespaces)
             if published_element is not None and published_element.text:
                 published_str = published_element.text
                 published_time = datetime.strptime(published_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if published_time < time_threshold: continue 
+                if published_time < time_threshold:
+                    continue 
                 
             raw_title = entry.find('atom:title', namespaces).text
             clean_title = re.sub('<[^<]+>', '', raw_title)
+            
             raw_link = entry.find('atom:link', namespaces).attrib['href']
             parsed_link = urllib.parse.urlparse(raw_link)
             query_params = urllib.parse.parse_qs(parsed_link.query)
@@ -173,18 +210,39 @@ for feed_url in RSS_FEEDS:
             
             if actual_url not in seen_urls:
                 seen_urls.add(actual_url)
-                content = get_page_content(actual_url)
-                if verification_keyword not in clean_title.lower() and verification_keyword not in content.lower(): continue
-                if any(keyword in clean_title for keyword in EXCLUDE_KEYWORDS) or any(keyword in content for keyword in EXCLUDE_KEYWORDS): continue
                 
+                content = get_page_content(actual_url)
+                
+                # 新增攔截：若偵測到付費牆特徵，直接捨棄不處理
+                if content == "PAYWALL_DETECTED":
+                    print(f"  └ [已過濾付費內容]: {clean_title}")
+                    continue
+                
+                if verification_keyword not in clean_title.lower() and verification_keyword not in content.lower():
+                    continue
+                
+                if any(keyword in clean_title for keyword in EXCLUDE_KEYWORDS) or any(keyword in content for keyword in EXCLUDE_KEYWORDS):
+                    print(f"  └ [已過濾股市雜訊-字詞比對]: {clean_title}")
+                    continue
+
                 print(f"  └ 新增並送交分析: {clean_title}")
                 summary = summarize_content(content, topic, clean_title)
-                if "REJECT_FINANCE" in summary: continue
                 
-                collected_news.append({"category": topic, "title": clean_title, "url": actual_url, "summary": summary})
+                if "REJECT_FINANCE" in summary:
+                    print(f"  └ [已過濾股市雜訊-AI語意審查]: {clean_title}")
+                    continue
+                
+                collected_news.append({
+                    "category": topic,
+                    "title": clean_title,
+                    "url": actual_url,
+                    "summary": summary
+                })
+                
                 time.sleep(5) 
+                
     except Exception as e:
-        print(f"解析異常: {e}")
+        print(f"解析過程中發生異常: {e}")
 
 # 5. 構建與發送郵件
 today_str = datetime.now().strftime("%Y-%m-%d")
@@ -193,33 +251,42 @@ msg['From'] = GMAIL_ADDRESS
 msg['To'] = GMAIL_ADDRESS
 
 if collected_news:
-    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 產業要聞與商業洞察"
+    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 產業要聞與商業戰略洞察"
+    collected_news.sort(key=lambda x: x['category'])
     
-    # 觸發商業深度分析
-    print("正在匯總今日新聞，進行 Top 3 商業深度分析...")
+    # 產出 Top 3 商業深度洞察 (新增)
     business_analysis_html = generate_business_analysis(collected_news)
     
-    collected_news.sort(key=lambda x: x['category'])
     news_html = ""
     current_cat = ""
     for n in collected_news:
         if n['category'] != current_cat:
             current_cat = n['category']
-            news_html += f"""<tr style="background:#f4f8ff;"><td style="padding:12px; border-left:5px solid #0056b3;"><b>■ {current_cat}</b></td></tr>"""
-        news_html += f"""<tr><td style="padding:15px 10px; border-bottom:1px solid #eee;"><div style="font-size:16px; font-weight:bold; margin-bottom:5px;"><a href="{n['url']}" style="color:#0056b3; text-decoration:none;">▷ {n['title']}</a></div><div style="font-size:14px; color:#333; line-height:1.6;">{n['summary']}</div></td></tr>"""
+            news_html += f"""
+            <tr style="background:#f4f8ff;">
+                <td style="padding:12px; border-left:5px solid #0056b3; margin-top:10px;">
+                    <b>■ {current_cat}</b>
+                </td>
+            </tr>
+            """
+        news_html += f"""
+        <tr>
+            <td style="padding:15px 10px; border-bottom:1px solid #eee;">
+                <div style="font-size:16px; font-weight:bold; margin-bottom:5px;">
+                    <a href="{n['url']}" style="color:#0056b3; text-decoration:none;">▷ {n['title']}</a>
+                </div>
+                <div style="font-size:14px; color:#333; line-height:1.6;">{n['summary']}</div>
+            </td>
+        </tr>
+        """
         
-    # 組合最終信件內容 (上方為深度分析，下方為完整清單)
-    final_email_content = ""
-    if business_analysis_html:
-        final_email_content += f"<h2 style='color:#333; border-bottom: 2px solid #ccc; padding-bottom: 8px;'>🏆 今日 Top 3 商業深度洞察</h2>"
-        final_email_content += business_analysis_html
-        final_email_content += f"<h2 style='color:#333; border-bottom: 2px solid #ccc; padding-bottom: 8px; margin-top: 40px;'>📰 完整產業動態快報</h2>"
-        
-    final_email_content += f"<table style='width:100%; border-collapse:collapse; font-family: sans-serif;'>{news_html}</table>"
-    body_html = f"<html><body style='font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;'>{final_email_content}</body></html>"
+    body_html = f"<html><body style='font-family: sans-serif; max-width: 800px; margin: 0 auto;'>"
+    body_html += business_analysis_html
+    body_html += f"<h3>📰 今日情報總覽</h3>"
+    body_html += f"<table style='width:100%; border-collapse:collapse;'>{news_html}</table></body></html>"
 else:
     msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 今日無相關產業動態"
-    body_html = "<html><body><p>經過股市雜訊過濾與關鍵字比對後，過去 24 小時內並無高度相關的技術發展動態。</p></body></html>"
+    body_html = "<html><body><p>經過股市雜訊與付費牆過濾後，過去 24 小時內並無高度相關的技術發展動態。</p></body></html>"
 
 msg.attach(MIMEText(body_html, 'html'))
 
