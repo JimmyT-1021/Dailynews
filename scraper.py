@@ -17,6 +17,12 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('models/gemini-3.5-flash')
 
+# ==================== 安全鎖與配額設定 ====================
+# 【強制安全鎖】每次執行最多只呼叫 API 處理 30 篇新聞，徹底杜絕 429 額度耗盡
+MAX_API_CALLS = 30 
+api_call_count = 0 
+# ==========================================================
+
 # 3. 專屬 RSS 資料流清單 (共 13 組)
 RSS_FEEDS = [
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/18404326158233745867",
@@ -34,42 +40,19 @@ RSS_FEEDS = [
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/2507623650954551348"
 ]
 
-# 4. 股市與財報雜訊排除參數庫
-EXCLUDE_KEYWORDS = [
-    "股價", "營收", "大盤", "外資", "EPS", "台股", "升息", 
-    "殖利率", "投機", "多頭", "空頭", "個股", "法人", 
-    "買超", "賣超", "目標價", "股市", "除息", "配息"
-]
+# 4. 字典庫設定
+# 【新增】AI 專屬白名單 (沒提到這些字，直接丟棄)
+TARGET_AI_KEYWORDS = ["AI", "人工智慧", "人工智能", "生成式", "Generative AI", "LLM", "大模型"]
 
-# 5. 教育與培訓課程雜訊排除參數庫 (新增)
-COURSE_KEYWORDS = [
-    "開課", "招生", "研習營", "培訓班", "推廣教育", 
-    "學分班", "報名參訓", "職前訓練", "夏令營"
-]
+PAYWALL_KEYWORDS = ["訂閱解鎖", "VIP專屬", "付費會員", "付費解鎖", "訂閱觀看全文", "加入會員觀看全文", "解鎖全文", "VIP會員", "限訂閱者閱讀"]
+EXCLUDE_KEYWORDS = ["股價", "營收", "大盤", "外資", "EPS", "台股", "升息", "殖利率", "投機", "多頭", "空頭", "個股", "法人", "買超", "賣超", "目標價", "股市", "除息", "配息"]
+COURSE_KEYWORDS = ["開課", "招生", "研習營", "培訓班", "學分班", "報名連結", "補習班", "冬令營", "夏令營", "工作坊", "講座報名"]
+CONSUMER_KEYWORDS = ["開箱", "評測", "懶人包", "限時下殺", "哪裡買", "優惠碼", "性價比", "促銷", "早鳥價", "折扣"]
+GOSSIP_KEYWORDS = ["網友熱議", "網爆", "炎上", "吵翻", "鄉民", "PTT熱議", "Dcard", "傻眼", "網怒", "酸民"]
+PR_KEYWORDS = ["榮獲", "頒獎典禮", "殊榮", "廣編特輯", "品牌大使", "共襄盛舉", "獲頒", "盛大開幕", "圓滿落幕"]
 
-# 6. 終端消費電子與促銷雜訊排除參數庫
-CONSUMER_KEYWORDS = [
-    "開箱", "評測", "懶人包", "限時下殺", "哪裡買", 
-    "優惠碼", "性價比", "促銷", "早鳥價"
-]
-
-# 7. 內容農場與八卦雜訊排除參數庫
-GOSSIP_KEYWORDS = [
-    "網友熱議", "網爆", "炎上", "吵翻", "鄉民", 
-    "PTT熱議", "Dcard", "傻眼", "網怒"
-]
-
-# 8. 公關廣編與企業得獎雜訊排除參數庫
-PR_KEYWORDS = [
-    "榮獲", "頒獎典禮", "殊榮", "廣編特輯", 
-    "品牌大使", "共襄盛舉", "獲頒"
-]
-
-# 9. 付費牆與訂閱特徵字庫
-PAYWALL_KEYWORDS = [
-    "訂閱解鎖", "VIP專屬", "付費會員", "付費解鎖", "訂閱觀看全文",
-    "加入會員觀看全文", "解鎖全文", "VIP會員", "限訂閱者閱讀"
-]
+# 組合所有黑名單字典以便快速掃描
+ALL_BLACKLIST = EXCLUDE_KEYWORDS + COURSE_KEYWORDS + CONSUMER_KEYWORDS + GOSSIP_KEYWORDS + PR_KEYWORDS
 
 collected_news = []
 seen_urls = set()
@@ -113,18 +96,18 @@ def summarize_content(text, topic, title):
     if len(text) < 80:
         return f"已鎖定關於【{topic}】的報導，但原始網頁具備存取限制。建議您點擊標題直接前往閱讀。"
     
-    # 升級版系統提示詞：加入所有雜訊排除邏輯
     prompt = f"""你是一位專業科技分析師。請嚴格遵守以下所有規則來為讀者『Jimmy』處理以下文章：
 1. 開頭必須一字不差地使用：「Jimmy您好，摘要如下，」
 2. 嚴禁使用任何 Markdown 符號（包含但不限於 ** 或 ：）。
-3. 字數嚴格限制在 65 字以內（若技術內容極度複雜，最多僅能放寬至 75 字）。
-4. 內容必須絕對聚焦於：科技發展、運用場景、實際痛點或使用者反饋。
-5. 審查機制：若判斷該文章核心屬於以下任一類別，請直接回傳對應的拒絕代碼，不要輸出任何其他文字：
-   - 股市分析、股價預測、企業營收或金融市場動態 -> 回傳「REJECT_FINANCE」
-   - 學校機構開設課程、大學招生、政府機關舉辦之AI培訓/研習/訓練課程 -> 回傳「REJECT_COURSE」
-   - 消費電子產品開箱、評測、促銷或購物指南 -> 回傳「REJECT_CONSUMER」
-   - 網路論壇爭議、網友熱議、八卦或口水戰 -> 回傳「REJECT_GOSSIP」
-   - 企業公關廣編稿、得獎通稿、無實質技術之自我宣傳 -> 回傳「REJECT_PR」
+3. 字數嚴格限制在 65 字以內。
+4. 內容必須絕對聚焦於：AI 科技發展、實際企業運用場景、產業衝擊。
+5. 審查機制（嚴格把關）：
+   - 若為股市/股價/金融預測，回傳「REJECT_FINANCE」
+   - 若為大學課程、政府招生、補習班推廣，回傳「REJECT_COURSE」
+   - 若為手機/筆電開箱、促銷優惠，回傳「REJECT_CONSUMER」
+   - 若為 PTT/Dcard 網友八卦爭吵，回傳「REJECT_GOSSIP」
+   - 若純屬企業得獎自嗨公關稿，回傳「REJECT_PR」
+   - 若文章實質上與 AI/人工智慧的商業或技術發展無關，回傳「REJECT_NOT_AI」
 
 標題：{title}
 內容：{text}"""
@@ -136,33 +119,31 @@ def summarize_content(text, topic, title):
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
     }
     
-    # 導入防 429 重試機制
     max_retries = 3
     for attempt in range(max_retries):
         try:
             response = model.generate_content(prompt, safety_settings=safety_settings)
             if not response.parts:
-                return "AI 判斷此新聞內容涉及敏感或安全限制字眼，無法生成摘要，請點擊標題查看全文。"
+                return "AI 判斷此新聞內容涉及敏感限制字眼，無法生成摘要。"
             return response.text.strip().replace('\n', '')
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg and attempt < max_retries - 1:
                 wait_time = 20 * (attempt + 1)
-                print(f"  [API 流量控管] 觸發 429 限制，暫停 {wait_time} 秒後進行第 {attempt+2} 次重試...")
                 time.sleep(wait_time)
             else:
                 print(f"  [AI 摘要失敗] {title} - 錯誤原因: {e}")
                 return "AI 摘要模組暫時無回應，請點擊標題查看全文。"
 
 def generate_business_analysis(news_list):
-    if len(news_list) < 3:
+    if len(news_list) < 1:
         return ""
     
     news_text = ""
-    for i, n in enumerate(news_list):
+    for i, n in enumerate(news_list[:3]): # 最多取前3篇進行商業分析
         news_text += f"[{i+1}] 標題：{n['title']}\n摘要：{n['summary']}\n\n"
         
-    prompt = f"""你是一位頂尖的商業戰略分析師。請從以下今日新聞清單中，挑選出「最具商業變現潛力與產業影響力」的 3 篇新聞，並嚴格依照以下格式輸出 HTML 程式碼（不需輸出 ```html 標籤，直接輸出 HTML 內容即可，方便我嵌入信件中）。
+    prompt = f"""你是一位頂尖的商業戰略分析師。請從以下今日新聞清單中，挑選出「最具商業變現潛力與產業影響力」的 AI 新聞，並嚴格依照以下格式輸出 HTML 程式碼（直接輸出 HTML 內容即可）。
 
 格式要求：
 對於每一篇選出的新聞，請產出以下 HTML 結構：
@@ -198,8 +179,8 @@ def generate_business_analysis(news_list):
             if response.text:
                 return f"""
                 <div style="background-color: #eaf1f8; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
-                    <h2 style="color: #d32f2f; margin-top: 0; text-align: center;">🏆 今日 Top 3 商業戰略洞察</h2>
-                    <p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 20px;">基於今日產業動態，為您淬鍊出三大最具變現潛力之情報分析</p>
+                    <h2 style="color: #d32f2f; margin-top: 0; text-align: center;">🏆 今日 Top AI 商業戰略洞察</h2>
+                    <p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 20px;">基於今日產業動態，為您淬鍊出最具變現潛力之 AI 情報分析</p>
                     {response.text.strip().replace('```html', '').replace('```', '')}
                 </div>
                 """
@@ -208,36 +189,42 @@ def generate_business_analysis(news_list):
             error_msg = str(e)
             if "429" in error_msg and attempt < max_retries - 1:
                 wait_time = 30 * (attempt + 1)
-                print(f"  [API 流量控管] 商業分析觸發 429 限制，暫停 {wait_time} 秒後進行重試...")
                 time.sleep(wait_time)
             else:
                 print(f"  [AI 商業分析生成失敗] 錯誤原因: {e}")
-                return ""
+                return f"""
+                <div style="background-color: #fff3cd; padding: 15px; border-left: 5px solid #ffc107; margin-bottom: 20px;">
+                    <strong style="color: #856404;">系統提示：</strong><span style="color: #856404; font-size: 14px;"> 今日 Google API 免費運算額度已達上限，暫停生成商業深度分析。下方仍為您提供一般快報整理。</span>
+                </div>
+                """
 
 now_utc = datetime.now(timezone.utc)
 time_threshold = now_utc - timedelta(hours=24)
 
-print(f"--- 啟動 RSS 訂閱解析任務: {datetime.now()} ---")
+print(f"--- 啟動 AI 專屬情報解析任務: {datetime.now()} ---")
 
 for feed_url in RSS_FEEDS:
+    if api_call_count >= MAX_API_CALLS:
+        print("【安全鎖觸發】已達本次排程最大分析額度 (30篇)，停止抓取新資訊以保護 API。")
+        break
+
     try:
         response = requests.get(feed_url, timeout=15)
         if response.status_code != 200:
-            print(f"無法讀取 RSS: {feed_url}")
             continue
             
         root = ET.fromstring(response.content)
-        
         feed_title = root.find('atom:title', namespaces).text
         topic_match = re.search(r'Google 快訊 - (.*?)\s*\(site:', feed_title)
         topic = topic_match.group(1).strip() if topic_match else "產業焦點"
         
-        verification_keyword = topic.replace('"', '').replace('“', '').replace('”', '').strip().lower()
-        
         entries = root.findall('atom:entry', namespaces)
-        print(f"解析【{topic}】RSS 流... 發現 {len(entries)} 筆紀錄")
+        print(f"解析【{topic}】RSS 流...")
         
         for entry in entries:
+            if api_call_count >= MAX_API_CALLS:
+                break # 再次確認安全鎖
+
             published_element = entry.find('atom:published', namespaces)
             if published_element is not None and published_element.text:
                 published_str = published_element.text
@@ -259,55 +246,27 @@ for feed_url in RSS_FEEDS:
                 content = get_page_content(actual_url)
                 
                 if content == "PAYWALL_DETECTED":
-                    print(f"  └ [已過濾付費內容]: {clean_title}")
                     continue
                 
-                if verification_keyword not in clean_title.lower() and verification_keyword not in content.lower():
+                # 【第一道防線】本地端白名單確認：沒提到 AI 相關字詞直接捨棄 (零成本)
+                text_to_check = (clean_title + content).lower()
+                is_ai_related = any(kw.lower() in text_to_check for kw in TARGET_AI_KEYWORDS)
+                if not is_ai_related:
+                    print(f"  └ [非AI新聞直接捨棄]: {clean_title}")
                     continue
                 
-                # 過濾股市雜訊
-                if any(keyword in clean_title for keyword in EXCLUDE_KEYWORDS) or any(keyword in content for keyword in EXCLUDE_KEYWORDS):
-                    print(f"  └ [已過濾股市雜訊-字詞比對]: {clean_title}")
+                # 【第二道防線】本地端黑名單過濾：股市、公關、農場文、課程
+                if any(keyword in clean_title for keyword in ALL_BLACKLIST) or any(keyword in content for keyword in ALL_BLACKLIST):
+                    print(f"  └ [命中黑名單字詞過濾]: {clean_title}")
                     continue
 
-                # 過濾學校/政府課程雜訊 (新增)
-                if any(keyword in clean_title for keyword in COURSE_KEYWORDS):
-                    print(f"  └ [已過濾課程雜訊-字詞比對]: {clean_title}")
-                    continue
-
-                # 過濾消費電子雜訊
-                if any(keyword in clean_title for keyword in CONSUMER_KEYWORDS):
-                    print(f"  └ [已過濾消費雜訊-字詞比對]: {clean_title}")
-                    continue
-
-                # 過濾內容農場雜訊
-                if any(keyword in clean_title for keyword in GOSSIP_KEYWORDS):
-                    print(f"  └ [已過濾農場雜訊-字詞比對]: {clean_title}")
-                    continue
-
-                # 過濾公關稿雜訊
-                if any(keyword in clean_title for keyword in PR_KEYWORDS):
-                    print(f"  └ [已過濾公關雜訊-字詞比對]: {clean_title}")
-                    continue
-
-                print(f"  └ 新增並送交分析: {clean_title}")
+                print(f"  └ [符合 AI 商業要件] 呼叫 API 進行分析: {clean_title}")
+                api_call_count += 1 # 準備呼叫 API，計數器 +1
                 summary = summarize_content(content, topic, clean_title)
                 
-                # 攔截 AI 語意判定結果
-                if "REJECT_FINANCE" in summary:
-                    print(f"  └ [已過濾股市雜訊-AI語意審查]: {clean_title}")
-                    continue
-                if "REJECT_COURSE" in summary:
-                    print(f"  └ [已過濾課程雜訊-AI語意審查]: {clean_title}")
-                    continue
-                if "REJECT_CONSUMER" in summary:
-                    print(f"  └ [已過濾消費雜訊-AI語意審查]: {clean_title}")
-                    continue
-                if "REJECT_GOSSIP" in summary:
-                    print(f"  └ [已過濾農場雜訊-AI語意審查]: {clean_title}")
-                    continue
-                if "REJECT_PR" in summary:
-                    print(f"  └ [已過濾公關雜訊-AI語意審查]: {clean_title}")
+                # 【第三道防線】AI 語意判官最終裁量
+                if "REJECT_" in summary:
+                    print(f"  └ [遭 AI 語意審查剔除]: {summary} - {clean_title}")
                     continue
                 
                 collected_news.append({
@@ -317,7 +276,6 @@ for feed_url in RSS_FEEDS:
                     "summary": summary
                 })
                 
-                # 將請求間隔設定為 15 秒，配合 API 的 15 RPM 限制
                 time.sleep(15) 
                 
     except Exception as e:
@@ -330,9 +288,10 @@ msg['From'] = GMAIL_ADDRESS
 msg['To'] = GMAIL_ADDRESS
 
 if collected_news:
-    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 產業要聞與商業戰略洞察"
+    msg['Subject'] = f"【Jimmy的AI戰略情報】{today_str} 商業變現與產業衝擊分析"
     collected_news.sort(key=lambda x: x['category'])
     
+    api_call_count += 1 # 總結分析也算 1 次 API 呼叫
     business_analysis_html = generate_business_analysis(collected_news)
     
     news_html = ""
@@ -360,11 +319,11 @@ if collected_news:
         
     body_html = f"<html><body style='font-family: sans-serif; max-width: 800px; margin: 0 auto;'>"
     body_html += business_analysis_html
-    body_html += f"<h3>📰 今日情報總覽</h3>"
+    body_html += f"<h3>📰 AI 戰略情報總覽</h3>"
     body_html += f"<table style='width:100%; border-collapse:collapse;'>{news_html}</table></body></html>"
 else:
-    msg['Subject'] = f"【Jimmy的每日新聞】{today_str} 今日無相關產業動態"
-    body_html = "<html><body><p>經過股市、課程雜訊與付費牆過濾後，過去 24 小時內並無高度相關的技術發展動態。</p></body></html>"
+    msg['Subject'] = f"【Jimmy的AI戰略情報】{today_str} 今日無高價值 AI 動態"
+    body_html = "<html><body><p>經過層層黑名單與非AI雜訊過濾後，過去 24 小時內並無高度相關的商業/技術發展動態。</p></body></html>"
 
 msg.attach(MIMEText(body_html, 'html'))
 
