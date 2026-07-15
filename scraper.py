@@ -25,7 +25,6 @@ api_call_count = 0
 
 # 3. 專屬 RSS 資料流清單 (共 13 組)
 RSS_FEEDS = [
-    "https://www.google.com.tw/alerts/feeds/13554238838654288953/18404326158233745867",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/7518766543809525173",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/2384905966260938889",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/18404326158233747233",
@@ -35,7 +34,6 @@ RSS_FEEDS = [
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/7518766543809526938",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/2507623650954553224",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/18404326158233745156",
-    "https://www.google.com.tw/alerts/feeds/13554238838654288953/7518766543809525223",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/2507623650954551914",
     "https://www.google.com.tw/alerts/feeds/13554238838654288953/2507623650954551348"
 ]
