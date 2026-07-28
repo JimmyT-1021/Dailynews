@@ -203,7 +203,12 @@ def generate_business_analysis(news_list):
                 """
 
 now_utc = datetime.now(timezone.utc)
-time_threshold = now_utc - timedelta(hours=24)
+
+# 星期一 (weekday() == 0) 執行時，回溯 72 小時抓取週末資料；其餘時間回溯 24 小時
+if now_utc.weekday() == 0:
+    time_threshold = now_utc - timedelta(hours=72)
+else:
+    time_threshold = now_utc - timedelta(hours=24)
 
 print(f"--- 啟動 AI 專屬情報解析任務: {datetime.now()} ---")
 
